@@ -482,6 +482,7 @@ let S = {
   adminAuth:   false,
   editRow:     null,        // row index being edited (null = add mode)
   _donorMap:   new Map(),   // key → donor object (for safe edit/delete refs)
+  fetchErr:    null,        // last fetch error message (null = no error)
 };
 
 /* ─────────────────────────────────────────────────────
@@ -543,47 +544,119 @@ function hideLoading() { hideEl('loadingOverlay'); }
 
 /* ─────────────────────────────────────────────────────
    API – FETCH  (GET all rows)
+   GAS web apps redirect to script.googleusercontent.com;
+   we read raw text first so we can log it on any parse error.
 ───────────────────────────────────────────────────── */
 async function fetchData() {
   showLoading();
+  let rawText = '';
   try {
-    const res  = await fetch(API_URL, { cache: 'no-store' });
-    const json = await res.json();
+    const res = await fetch(API_URL + '?t=' + Date.now(), {
+      method:   'GET',
+      redirect: 'follow',
+    });
+    rawText = await res.text();
+    console.log('[Docwala] Raw API response:', rawText);
 
-    // Normalise whatever format the GAS script returns
-    let rows = [];
-    if (Array.isArray(json))                        rows = json;
-    else if (Array.isArray(json.data))              rows = json.data;
-    else if (json.values && Array.isArray(json.values)) {
-      // Raw 2-D sheet array (skip header row if strings)
-      const arr = json.values;
-      const start = (typeof arr[0][0] === 'string' && isNaN(parseFloat(arr[0][7]))) ? 1 : 0;
-      rows = arr.slice(start).map((r, i) => ({
-        row:              start + i + 2,          // 1-indexed sheet row (row 1 = header)
-        'Project':        r[0] ?? '',
-        'Date':           r[1] ?? '',
-        'Name':           r[2] ?? '',
-        'Father Name':    r[3] ?? '',
-        'Age':            r[4] ?? '',
-        'Gender':         r[5] ?? '',
-        'Profession':     r[6] ?? '',
-        'Donation Amount':r[7] ?? 0,
-      }));
+    const json = JSON.parse(rawText);
+    const rows = normaliseGAS(json);
+
+    if (!rows.length) {
+      console.warn('[Docwala] API returned 0 rows. Parsed JSON:', json);
     }
 
-    // Assign sequential row identifiers if missing
-    rows = rows.map((r, i) => ({ ...r, row: r.row ?? (i + 2) }));
-
-    S.data = rows;
+    S.data      = rows;
+    S.fetchErr  = null;
     renderCurrent();
     hideLoading();
   } catch (err) {
     hideLoading();
-    console.error('fetchData:', err);
-    toast('Failed to load data. Check your connection.', 'error');
+    console.error('[Docwala] fetchData error:', err, '\nRaw text was:', rawText);
+    S.fetchErr = err.message + (rawText ? '\n\nRaw: ' + rawText.slice(0, 300) : '');
+    toast('Failed to load data — see console for details.', 'error');
     S.data = [];
     renderCurrent();
   }
+}
+
+/* ─────────────────────────────────────────────────────
+   Normalise every known GAS response shape into a flat
+   array of row-objects keyed by exact sheet column names.
+───────────────────────────────────────────────────── */
+function normaliseGAS(json) {
+  let raw = [];
+
+  if (Array.isArray(json)) {
+    raw = json;
+  } else if (json && typeof json === 'object') {
+    // Common wrapper keys
+    const candidate = json.data || json.rows || json.result || json.records || json.items;
+    if (Array.isArray(candidate)) {
+      raw = candidate;
+    } else if (Array.isArray(json.values)) {
+      // {values: [[...], [...]]} — raw sheet dump
+      return map2D(json.values);
+    }
+  }
+
+  if (!raw.length) return [];
+
+  // Detect 2-D array  ([[...],[...]])  vs array of objects ([{...}])
+  if (Array.isArray(raw[0])) return map2D(raw);
+
+  // Array of objects — normalise key names
+  return raw.map((obj, i) => normaliseKeys(obj, i));
+}
+
+/* Convert a 2-D array (optionally with a header row) to row-objects. */
+function map2D(arr) {
+  if (!arr.length) return [];
+  // Heuristic: first row is a header if its first cell looks like a label
+  const firstIsHeader =
+    typeof arr[0][0] === 'string' && isNaN(parseFloat(arr[0][0]));
+  const start = firstIsHeader ? 1 : 0;
+  return arr.slice(start).map((r, i) => ({
+    row:               start + i + 2,
+    'Project':         String(r[0] ?? ''),
+    'Date':            String(r[1] ?? ''),
+    'Name':            String(r[2] ?? ''),
+    'Father Name':     String(r[3] ?? ''),
+    'Age':             String(r[4] ?? ''),
+    'Gender':          String(r[5] ?? ''),
+    'Profession':      String(r[6] ?? ''),
+    'Donation Amount': r[7] ?? 0,
+  }));
+}
+
+/* Map common key-name variants to canonical names. */
+const KEY_MAP = {
+  project:          'Project',
+  date:             'Date',
+  name:             'Name',
+  'father name':    'Father Name',
+  fathername:       'Father Name',
+  father_name:      'Father Name',
+  fatherName:       'Father Name',
+  age:              'Age',
+  gender:           'Gender',
+  profession:       'Profession',
+  'donation amount':'Donation Amount',
+  donationamount:   'Donation Amount',
+  donation_amount:  'Donation Amount',
+  donationAmount:   'Donation Amount',
+  amount:           'Donation Amount',
+};
+
+function normaliseKeys(obj, idx) {
+  const out = { row: obj.row ?? obj.Row ?? obj.rowIndex ?? (idx + 2) };
+  Object.entries(obj).forEach(([k, v]) => {
+    const canonical = KEY_MAP[k] || KEY_MAP[k.toLowerCase()] || k;
+    out[canonical] = v;
+  });
+  // Ensure all expected keys exist
+  ['Project','Date','Name','Father Name','Age','Gender','Profession','Donation Amount']
+    .forEach(k => { if (!(k in out)) out[k] = ''; });
+  return out;
 }
 
 /* ─────────────────────────────────────────────────────
@@ -702,15 +775,26 @@ function renderMain() {
   notice.classList.add('hidden');
 
   if (!S.data.length) {
+    const isErr = !!S.fetchErr;
     grid.innerHTML = `
-      <div class="col-span-full py-20 text-center">
-        <span class="text-6xl">💝</span>
-        <h3 class="mt-4 text-lg font-semibold text-slate-700">No donation records yet</h3>
-        <p class="text-slate-400 text-sm mt-1">Records will appear here once loaded</p>
+      <div class="col-span-full py-16 text-center">
+        <span class="text-6xl">${isErr ? '⚠️' : '💝'}</span>
+        <h3 class="mt-4 text-lg font-semibold text-slate-700">
+          ${isErr ? 'Could not load data' : 'No donation records yet'}
+        </h3>
+        <p class="text-slate-400 text-sm mt-1 max-w-md mx-auto">
+          ${isErr
+            ? 'The API request failed. Make sure your Google Apps Script is deployed as a Web App with <strong>"Anyone"</strong> access, then retry.'
+            : 'Records will appear here once loaded from the sheet.'}
+        </p>
+        ${isErr ? `<details class="mt-4 text-left max-w-lg mx-auto">
+          <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600">Show error detail</summary>
+          <pre class="mt-2 text-xs bg-slate-100 rounded-xl p-3 overflow-auto text-red-600 whitespace-pre-wrap">${esc(S.fetchErr)}</pre>
+        </details>` : ''}
         <button onclick="fetchData()"
                 class="mt-5 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5
                        rounded-xl text-sm font-semibold transition">
-          Retry
+          🔄 Retry
         </button>
       </div>`;
     return;
