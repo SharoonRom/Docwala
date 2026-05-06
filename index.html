@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doctorwala 377 EB – Donation Transparency Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ── Animations ── */
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes spinAnim { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+    @keyframes slideIn  { from { transform:translateX(110%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+    @keyframes fadeOut  { from { opacity:1; } to { opacity:0; } }
+
+    .fade-up   { animation: fadeUp   .35s ease both; }
+    .spin      { animation: spinAnim  1s linear infinite; }
+    .toast-in  { animation: slideIn  .3s ease both; }
+    .toast-out { animation: fadeOut  .3s ease both; }
+
+    /* Table row hover */
+    tbody tr:hover { background-color: #f8fafc; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar       { width:6px; height:6px; }
+    ::-webkit-scrollbar-track { background:#f1f5f9; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+
+    /* Smooth link-like cursor on cards */
+    .project-card { cursor:pointer; transition: transform .25s ease, box-shadow .25s ease; }
+    .project-card:hover { transform:translateY(-4px); box-shadow:0 20px 40px -10px rgba(0,0,0,.15); }
+  </style>
+</head>
+
+<body class="bg-slate-50 min-h-screen antialiased">
+
+<!-- ════════════════════════════════════════════════════
+     TOAST CONTAINER
+════════════════════════════════════════════════════ -->
+<div id="toastBox" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+<!-- ════════════════════════════════════════════════════
+     LOADING OVERLAY
+════════════════════════════════════════════════════ -->
+<div id="loadingOverlay"
+     class="fixed inset-0 bg-black/50 z-[90] hidden flex-col items-center justify-center">
+  <div class="bg-white rounded-2xl p-10 flex flex-col items-center gap-4 shadow-2xl">
+    <svg class="spin w-12 h-12 text-blue-600" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-80" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.37 0 0 5.37 0 12h4zm2 5.29A7.96 7.96 0 014 12H0c0 3.04 1.14 5.82 3 7.94l3-2.65z"/>
+    </svg>
+    <p class="text-gray-600 font-semibold text-sm tracking-wide">Loading data…</p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     ADMIN LOGIN MODAL
+════════════════════════════════════════════════════ -->
+<div id="loginModal"
+     class="fixed inset-0 bg-black/50 z-[80] hidden items-center justify-center p-4">
+  <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-8 fade-up">
+    <div class="flex flex-col items-center mb-6">
+      <span class="text-4xl mb-2">🔒</span>
+      <h2 class="text-xl font-bold text-gray-800">Admin Access</h2>
+      <p class="text-sm text-gray-500 mt-1">Enter your password to continue</p>
+    </div>
+    <input id="loginPwd" type="password" placeholder="Password"
+           class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+           onkeydown="if(event.key==='Enter')doLogin()" />
+    <div class="flex gap-3">
+      <button onclick="doLogin()"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-3 text-sm font-semibold transition">
+        Login
+      </button>
+      <button onclick="closeModal('loginModal')"
+              class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl py-3 text-sm font-semibold transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     DELETE CONFIRM MODAL
+════════════════════════════════════════════════════ -->
+<div id="deleteModal"
+     class="fixed inset-0 bg-black/50 z-[80] hidden items-center justify-center p-4">
+  <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-8 fade-up">
+    <div class="flex flex-col items-center text-center mb-6">
+      <span class="text-4xl mb-2">⚠️</span>
+      <h2 class="text-xl font-bold text-gray-800">Confirm Delete</h2>
+      <p id="deleteModalMsg" class="text-sm text-gray-500 mt-2"></p>
+    </div>
+    <div class="flex gap-3">
+      <button id="deleteConfirmBtn"
+              class="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 text-sm font-semibold transition">
+        Delete
+      </button>
+      <button onclick="closeModal('deleteModal')"
+              class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl py-3 text-sm font-semibold transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     STICKY HEADER
+════════════════════════════════════════════════════ -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-[50] shadow-sm">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <button id="backBtn" onclick="navHome()"
+                class="hidden mr-1 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition text-slate-600 text-sm font-semibold">
+          ← Back
+        </button>
+        <div>
+          <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
+            Doctorwala 377 EB
+          </h1>
+          <p class="text-xs text-slate-500 mt-0.5 hidden sm:block">Community Donation Transparency Portal</p>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="flex items-center gap-2">
+        <div class="relative flex-1 sm:w-64">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none"
+               stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+          </svg>
+          <input id="globalSearch" type="search" placeholder="Search donors…"
+                 class="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-300 rounded-xl
+                        focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                 oninput="onGlobalSearch()" />
+        </div>
+        <button onclick="fetchData()" title="Refresh data"
+                class="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition text-slate-600">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 4v5h.58M20 20v-5h-.58M4.58 9A8 8 0 1 1 5.07 19"/>
+          </svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════════════════
+     PAGE: MAIN  (project cards)
+════════════════════════════════════════════════════ -->
+<main id="pageMain" class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+  <div id="mainHeading" class="mb-8">
+    <h2 class="text-2xl font-bold text-slate-800">Community Projects</h2>
+    <p class="text-slate-500 text-sm mt-1">Click a project to view its donor list</p>
+  </div>
+
+  <!-- Search result notice (hidden by default) -->
+  <div id="searchNotice" class="hidden mb-4 text-sm text-slate-500 font-medium"></div>
+
+  <!-- Project cards grid / search results -->
+  <div id="cardGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+</main>
+
+<!-- ════════════════════════════════════════════════════
+     PAGE: PROJECT DONORS TABLE
+════════════════════════════════════════════════════ -->
+<section id="pageProject" class="hidden max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+  <!-- Header row -->
+  <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div>
+      <h2 id="projTitle" class="text-2xl font-bold text-slate-800"></h2>
+      <p id="projStats" class="text-sm text-slate-500 mt-1"></p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none"
+             stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+        </svg>
+        <input id="projSearch" type="search" placeholder="Search donors…"
+               class="pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-xl
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 w-48"
+               oninput="onProjSearch()" />
+      </div>
+      <button onclick="exportCSV('project')"
+              class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white
+                     px-4 py-2 rounded-xl text-sm font-semibold transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Export Excel
+      </button>
+    </div>
+  </div>
+
+  <!-- Table card -->
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+            <th class="px-4 py-3 text-left">#</th>
+            <th class="px-4 py-3 text-left">Name</th>
+            <th class="px-4 py-3 text-left">Father Name</th>
+            <th class="px-4 py-3 text-left">Age</th>
+            <th class="px-4 py-3 text-left">Gender</th>
+            <th class="px-4 py-3 text-left">Profession</th>
+            <th class="px-4 py-3 text-right">Amount (PKR)</th>
+            <th class="px-4 py-3 text-left">Date</th>
+          </tr>
+        </thead>
+        <tbody id="projTbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Empty state -->
+    <div id="projEmpty" class="hidden py-16 text-center">
+      <span class="text-5xl">🔍</span>
+      <h3 class="mt-4 text-base font-semibold text-slate-700">No donors found</h3>
+      <p class="text-slate-400 text-sm mt-1">Try adjusting your search</p>
+    </div>
+
+    <!-- Pagination -->
+    <div id="projPagWrap" class="flex items-center justify-between px-5 py-3 border-t border-slate-100 flex-wrap gap-2">
+      <span id="projPagInfo" class="text-xs text-slate-500"></span>
+      <div id="projPagBtns" class="flex gap-1"></div>
+    </div>
+
+    <!-- Total row -->
+    <div class="flex items-center justify-between px-5 py-4 bg-slate-50 border-t border-slate-200">
+      <span class="font-semibold text-slate-700 text-sm">Total Donations</span>
+      <span id="projTotal" class="text-lg font-extrabold text-emerald-600"></span>
+    </div>
+  </div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════
+     PAGE: ADMIN DASHBOARD
+════════════════════════════════════════════════════ -->
+<section id="pageAdmin" class="hidden max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+  <!-- Admin header -->
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h2 class="text-2xl font-bold text-slate-800">Admin Dashboard</h2>
+      <p class="text-slate-500 text-sm mt-1">Add, edit and remove donor records</p>
+    </div>
+    <button onclick="doLogout()"
+            class="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600
+                   px-4 py-2 rounded-xl text-sm font-semibold transition">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+      </svg>
+      Logout
+    </button>
+  </div>
+
+  <!-- ── Add / Edit form ── -->
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
+    <h3 id="formTitle" class="text-base font-bold text-slate-800 mb-5">Add New Donor</h3>
+
+    <form id="donorForm" onsubmit="submitForm(event)"
+          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      <!-- Project -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Project *</label>
+        <select id="fProject" required
+                class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Select Project</option>
+          <option value="Water Supply">Water Supply</option>
+          <option value="Church Construction">Church Construction</option>
+          <option value="School Building">School Building</option>
+          <option value="Kids">Kids</option>
+          <option value="ABC">ABC</option>
+        </select>
+      </div>
+
+      <!-- Name -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Full Name *</label>
+        <input id="fName" type="text" required placeholder="e.g. Ahmad Ali"
+               class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Father Name -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Father Name *</label>
+        <input id="fFather" type="text" required placeholder="e.g. Muhammad Ali"
+               class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Age -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Age *</label>
+        <input id="fAge" type="number" required min="1" max="120" placeholder="e.g. 35"
+               class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Gender -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Gender *</label>
+        <select id="fGender" required
+                class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Select Gender</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+        </select>
+      </div>
+
+      <!-- Profession -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Profession *</label>
+        <input id="fProfession" type="text" required placeholder="e.g. Farmer"
+               class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Amount -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Amount (PKR) *</label>
+        <input id="fAmount" type="number" required min="1" placeholder="e.g. 5000"
+               class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Date -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Date *</label>
+        <input id="fDate" type="date" required
+               class="border border-slate-300 rounded-xl px-3 py-2.5 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Buttons -->
+      <div class="col-span-full flex flex-wrap gap-3 pt-2">
+        <button id="fSubmitBtn" type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5
+                       rounded-xl text-sm font-semibold transition min-w-[120px]">
+          Add Donor
+        </button>
+        <button id="fCancelBtn" type="button" onclick="resetForm()"
+                class="hidden bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2.5
+                       rounded-xl text-sm font-semibold transition">
+          Cancel Edit
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- ── Admin donor table ── -->
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+    <!-- Table toolbar -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-slate-100">
+      <h3 class="font-bold text-slate-800">All Donors
+        <span id="adminRecordCount" class="ml-2 text-xs font-medium text-slate-400"></span>
+      </h3>
+      <div class="flex flex-wrap gap-2">
+        <div class="relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none"
+               stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+          </svg>
+          <input id="adminSearch" type="search" placeholder="Search…"
+                 class="pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-xl
+                        focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 w-48"
+                 oninput="onAdminSearch()" />
+        </div>
+        <button onclick="exportCSV('admin')"
+                class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white
+                       px-4 py-2 rounded-xl text-sm font-semibold transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          Export All
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+            <th class="px-4 py-3 text-left">#</th>
+            <th class="px-4 py-3 text-left">Project</th>
+            <th class="px-4 py-3 text-left">Name</th>
+            <th class="px-4 py-3 text-left">Father Name</th>
+            <th class="px-4 py-3 text-left">Age</th>
+            <th class="px-4 py-3 text-left">Gender</th>
+            <th class="px-4 py-3 text-left">Profession</th>
+            <th class="px-4 py-3 text-right">Amount</th>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="adminTbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Admin empty state -->
+    <div id="adminEmpty" class="hidden py-16 text-center">
+      <span class="text-5xl">📋</span>
+      <h3 class="mt-4 text-base font-semibold text-slate-700">No donors yet</h3>
+      <p class="text-slate-400 text-sm mt-1">Use the form above to add the first donor</p>
+    </div>
+
+    <!-- Admin pagination -->
+    <div id="adminPagWrap"
+         class="flex items-center justify-between px-5 py-3 border-t border-slate-100 flex-wrap gap-2">
+      <span id="adminPagInfo" class="text-xs text-slate-500"></span>
+      <div id="adminPagBtns" class="flex gap-1"></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════
+     HIDDEN ADMIN TRIGGER  (bottom-right lock icon)
+════════════════════════════════════════════════════ -->
+<button id="adminTrigger" onclick="openAdminGate()" title="Admin"
+        class="fixed bottom-5 right-5 z-[60] w-10 h-10 rounded-full bg-slate-700/40
+               hover:bg-slate-800 text-white flex items-center justify-center
+               text-base shadow-lg transition-all opacity-20 hover:opacity-100
+               focus:outline-none focus:ring-2 focus:ring-slate-400">
+  🔒
+</button>
+
+
+<!-- ════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════ -->
+<script>
+/* ─────────────────────────────────────────────────────
+   CONFIG
+───────────────────────────────────────────────────── */
+const API_URL  = 'https://script.google.com/macros/s/AKfycbwFbcUmJPliNh3fGWDpIEsB5CjJlMlFvtr1InHNe4DqFjTMfbyXNm0Q-62KALNN2d1nFw/exec';
+const ADMIN_PW = 'admin123';
+const PER_PAGE = 10;
+
+// Project metadata (name → styling)
+const PROJ_CFG = {
+  'Water Supply':        { icon:'💧', hdr:'bg-blue-500',   light:'bg-blue-50',   border:'border-blue-200',   txt:'text-blue-600',   badge:'bg-blue-100 text-blue-700'   },
+  'Church Construction': { icon:'⛪', hdr:'bg-green-500',  light:'bg-green-50',  border:'border-green-200',  txt:'text-green-600',  badge:'bg-green-100 text-green-700'  },
+  'School Building':     { icon:'🏫', hdr:'bg-orange-500', light:'bg-orange-50', border:'border-orange-200', txt:'text-orange-600', badge:'bg-orange-100 text-orange-700' },
+  'Kids':                { icon:'👧', hdr:'bg-purple-500', light:'bg-purple-50', border:'border-purple-200', txt:'text-purple-600', badge:'bg-purple-100 text-purple-700' },
+  'ABC':                 { icon:'📋', hdr:'bg-red-500',    light:'bg-red-50',    border:'border-red-200',    txt:'text-red-600',    badge:'bg-red-100 text-red-700'      },
+};
+
+/* ─────────────────────────────────────────────────────
+   STATE
+───────────────────────────────────────────────────── */
+let S = {
+  data:        [],          // full dataset from API
+  view:        'main',      // 'main' | 'project' | 'admin'
+  project:     null,        // active project name
+  projPage:    1,
+  adminPage:   1,
+  projFilter:  '',
+  adminFilter: '',
+  adminAuth:   false,
+  editRow:     null,        // row index being edited (null = add mode)
+  _donorMap:   new Map(),   // key → donor object (for safe edit/delete refs)
+};
+
+/* ─────────────────────────────────────────────────────
+   HELPERS – DOM
+───────────────────────────────────────────────────── */
+const $  = id => document.getElementById(id);
+const esc = s  => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function showEl(...ids)  { ids.forEach(id => { const el=$( id); el.classList.remove('hidden'); el.classList.add('flex'); }); }
+function hideEl(...ids)  { ids.forEach(id => { const el=$(id); el.classList.add('hidden'); el.classList.remove('flex'); }); }
+
+function openModal(id)  { showEl(id); }
+function closeModal(id) { hideEl(id); }
+
+/* ─────────────────────────────────────────────────────
+   HELPERS – FORMATTING
+───────────────────────────────────────────────────── */
+function fmtAmt(v) {
+  const n = parseFloat(v) || 0;
+  return 'PKR ' + n.toLocaleString('en-PK');
+}
+
+function fmtDate(v) {
+  if (!v) return '–';
+  try {
+    const d = new Date(v);
+    if (isNaN(d)) return String(v);
+    return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+  } catch { return String(v); }
+}
+
+function today() { return new Date().toISOString().slice(0,10); }
+
+function projCfg(name) {
+  return PROJ_CFG[name] || { icon:'📦', hdr:'bg-slate-500', light:'bg-slate-50', border:'border-slate-200', txt:'text-slate-600', badge:'bg-slate-100 text-slate-700' };
+}
+
+/* ─────────────────────────────────────────────────────
+   TOAST NOTIFICATIONS
+───────────────────────────────────────────────────── */
+function toast(msg, type='success') {
+  const box = $('toastBox');
+  const colors = { success:'bg-emerald-500', error:'bg-red-500', info:'bg-blue-500', warn:'bg-amber-500' };
+  const t = document.createElement('div');
+  t.className = `toast-in pointer-events-auto ${colors[type]||colors.success} text-white text-sm font-medium px-5 py-3 rounded-xl shadow-lg max-w-xs`;
+  t.textContent = msg;
+  box.appendChild(t);
+  setTimeout(() => {
+    t.classList.replace('toast-in','toast-out');
+    setTimeout(() => t.remove(), 320);
+  }, 3400);
+}
+
+/* ─────────────────────────────────────────────────────
+   LOADING SPINNER
+───────────────────────────────────────────────────── */
+function showLoading() { showEl('loadingOverlay'); }
+function hideLoading() { hideEl('loadingOverlay'); }
+
+/* ─────────────────────────────────────────────────────
+   API – FETCH  (GET all rows)
+───────────────────────────────────────────────────── */
+async function fetchData() {
+  showLoading();
+  try {
+    const res  = await fetch(API_URL, { cache: 'no-store' });
+    const json = await res.json();
+
+    // Normalise whatever format the GAS script returns
+    let rows = [];
+    if (Array.isArray(json))                        rows = json;
+    else if (Array.isArray(json.data))              rows = json.data;
+    else if (json.values && Array.isArray(json.values)) {
+      // Raw 2-D sheet array (skip header row if strings)
+      const arr = json.values;
+      const start = (typeof arr[0][0] === 'string' && isNaN(parseFloat(arr[0][7]))) ? 1 : 0;
+      rows = arr.slice(start).map((r, i) => ({
+        row:              start + i + 2,          // 1-indexed sheet row (row 1 = header)
+        'Project':        r[0] ?? '',
+        'Date':           r[1] ?? '',
+        'Name':           r[2] ?? '',
+        'Father Name':    r[3] ?? '',
+        'Age':            r[4] ?? '',
+        'Gender':         r[5] ?? '',
+        'Profession':     r[6] ?? '',
+        'Donation Amount':r[7] ?? 0,
+      }));
+    }
+
+    // Assign sequential row identifiers if missing
+    rows = rows.map((r, i) => ({ ...r, row: r.row ?? (i + 2) }));
+
+    S.data = rows;
+    renderCurrent();
+    hideLoading();
+  } catch (err) {
+    hideLoading();
+    console.error('fetchData:', err);
+    toast('Failed to load data. Check your connection.', 'error');
+    S.data = [];
+    renderCurrent();
+  }
+}
+
+/* ─────────────────────────────────────────────────────
+   API – POST  (add / edit / delete)
+   Tries CORS first; falls back to no-cors on failure.
+───────────────────────────────────────────────────── */
+async function postData(payload) {
+  const body = JSON.stringify(payload);
+  // Attempt 1: standard CORS (readable response)
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!res.ok) throw new Error('Non-2xx');
+    return { ok: true };
+  } catch (_) {
+    // Attempt 2: no-cors fallback (fire-and-forget)
+    try {
+      await fetch(API_URL, { method: 'POST', body, mode: 'no-cors' });
+      return { ok: true, noCors: true };
+    } catch (e) {
+      return { ok: false, err: e.message };
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────────────
+   NAVIGATION
+───────────────────────────────────────────────────── */
+function showPage(name) {
+  ['pageMain','pageProject','pageAdmin'].forEach(id => $( id).classList.add('hidden'));
+  const el = $(name === 'main' ? 'pageMain' : name === 'project' ? 'pageProject' : 'pageAdmin');
+  el.classList.remove('hidden');
+  el.classList.add('fade-up');
+  S.view = name === 'pageMain' ? 'main' : name === 'pageProject' ? 'project' : 'admin';
+  // Back button visibility
+  name === 'pageMain' ? $('backBtn').classList.add('hidden') : $('backBtn').classList.remove('hidden');
+}
+
+function navHome() {
+  S.project    = null;
+  S.projPage   = 1;
+  S.projFilter = '';
+  $('projSearch').value   = '';
+  $('globalSearch').value = '';
+  showPage('pageMain');
+  renderMain();
+}
+
+function renderCurrent() {
+  if (S.view === 'main')    renderMain();
+  if (S.view === 'project') renderProject();
+  if (S.view === 'admin')   renderAdminTable();
+}
+
+/* ─────────────────────────────────────────────────────
+   MAIN VIEW – PROJECT CARDS
+───────────────────────────────────────────────────── */
+function renderMain() {
+  const q     = $('globalSearch').value.trim().toLowerCase();
+  const grid  = $('cardGrid');
+  const notice= $('searchNotice');
+  const head  = $('mainHeading');
+
+  grid.innerHTML = '';
+
+  /* ── Global search mode ── */
+  if (q) {
+    head.classList.add('hidden');
+    const hits = S.data.filter(d =>
+      [d.Name, d['Father Name'], d.Profession, d.Project]
+        .some(v => (v||'').toLowerCase().includes(q))
+    );
+    notice.textContent = `${hits.length} result${hits.length!==1?'s':''} for "${q}"`;
+    notice.classList.remove('hidden');
+
+    if (!hits.length) {
+      grid.innerHTML = `
+        <div class="col-span-full py-16 text-center">
+          <span class="text-5xl">🔍</span>
+          <h3 class="mt-4 text-base font-semibold text-slate-700">No donors match that search</h3>
+          <p class="text-slate-400 text-sm mt-1">Try a different name or profession</p>
+        </div>`;
+      return;
+    }
+
+    hits.forEach(d => {
+      const c   = projCfg(d.Project);
+      const div = document.createElement('div');
+      div.className = `${c.light} ${c.border} border rounded-2xl p-4 flex items-center gap-4 fade-up`;
+      div.innerHTML = `
+        <div class="${c.hdr} text-white w-11 h-11 rounded-full flex items-center justify-center
+                   font-bold text-lg flex-shrink-0">
+          ${esc((d.Name||'?')[0].toUpperCase())}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-slate-800 truncate">${esc(d.Name)}</p>
+          <p class="text-xs text-slate-500 truncate">S/O ${esc(d['Father Name'])} &bull; ${esc(d.Profession)}</p>
+          <span class="${c.badge} text-xs font-medium px-2 py-0.5 rounded-full inline-block mt-1">
+            ${esc(d.Project)}
+          </span>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <p class="${c.txt} font-bold text-sm">${fmtAmt(d['Donation Amount'])}</p>
+          <p class="text-xs text-slate-400 mt-0.5">${fmtDate(d.Date)}</p>
+        </div>`;
+      grid.appendChild(div);
+    });
+    return;
+  }
+
+  /* ── Normal project-cards mode ── */
+  head.classList.remove('hidden');
+  notice.classList.add('hidden');
+
+  if (!S.data.length) {
+    grid.innerHTML = `
+      <div class="col-span-full py-20 text-center">
+        <span class="text-6xl">💝</span>
+        <h3 class="mt-4 text-lg font-semibold text-slate-700">No donation records yet</h3>
+        <p class="text-slate-400 text-sm mt-1">Records will appear here once loaded</p>
+        <button onclick="fetchData()"
+                class="mt-5 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5
+                       rounded-xl text-sm font-semibold transition">
+          Retry
+        </button>
+      </div>`;
+    return;
+  }
+
+  Object.entries(PROJ_CFG).forEach(([name, c]) => {
+    const rows  = S.data.filter(d => d.Project === name);
+    const total = rows.reduce((s,d) => s + (parseFloat(d['Donation Amount'])||0), 0);
+    const card  = document.createElement('div');
+    card.className = 'project-card fade-up bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200';
+    card.onclick   = () => openProject(name);
+    card.innerHTML = `
+      <div class="${c.hdr} px-6 py-5 text-white">
+        <div class="flex items-center justify-between">
+          <span class="text-3xl">${c.icon}</span>
+          <span class="bg-white/20 text-white text-xs font-semibold px-3 py-1 rounded-full">
+            ${rows.length} donor${rows.length!==1?'s':''}
+          </span>
+        </div>
+        <h3 class="text-xl font-bold mt-3 leading-snug">${esc(name)}</h3>
+      </div>
+      <div class="px-6 py-5">
+        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Collected</p>
+        <p class="${c.txt} text-2xl font-extrabold">${fmtAmt(total)}</p>
+        <div class="flex items-center justify-between mt-4">
+          <span class="${c.badge} text-xs font-semibold px-3 py-1 rounded-full">
+            ${rows.length} donor${rows.length!==1?'s':''}
+          </span>
+          <span class="${c.txt} text-sm font-semibold">View Donors →</span>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+
+function onGlobalSearch() { renderMain(); }
+
+/* ─────────────────────────────────────────────────────
+   PROJECT DONOR TABLE
+───────────────────────────────────────────────────── */
+function openProject(name) {
+  S.project    = name;
+  S.projPage   = 1;
+  S.projFilter = '';
+  $('projSearch').value = '';
+  showPage('pageProject');
+  renderProject();
+}
+
+function renderProject() {
+  if (!S.project) return;
+  const c = projCfg(S.project);
+
+  // Filter
+  const q    = S.projFilter.toLowerCase();
+  const rows = S.data
+    .filter(d => d.Project === S.project)
+    .filter(d => !q || [d.Name, d['Father Name'], d.Profession].some(v=>(v||'').toLowerCase().includes(q)));
+
+  // Stats
+  const total = rows.reduce((s,d)=>s+(parseFloat(d['Donation Amount'])||0),0);
+  $('projTitle').textContent   = S.project;
+  $('projTitle').className     = `text-2xl font-bold ${c.txt}`;
+  $('projStats').textContent   = `${rows.length} donor${rows.length!==1?'s':''} · Total: ${fmtAmt(total)}`;
+  $('projTotal').textContent   = fmtAmt(total);
+
+  // Pagination
+  const pages  = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  if (S.projPage > pages) S.projPage = pages;
+  const start  = (S.projPage-1)*PER_PAGE;
+  const slice  = rows.slice(start, start+PER_PAGE);
+
+  // Table body
+  const tbody = $('projTbody');
+  const empty = $('projEmpty');
+  if (!slice.length) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+  } else {
+    empty.classList.add('hidden');
+    tbody.innerHTML = slice.map((d,i) => `
+      <tr>
+        <td class="px-4 py-3 text-slate-400 text-xs">${start+i+1}</td>
+        <td class="px-4 py-3 font-medium text-slate-800">${esc(d.Name)}</td>
+        <td class="px-4 py-3 text-slate-600">${esc(d['Father Name'])}</td>
+        <td class="px-4 py-3 text-slate-600">${esc(d.Age)}</td>
+        <td class="px-4 py-3 text-slate-600">${esc(d.Gender)}</td>
+        <td class="px-4 py-3 text-slate-600">${esc(d.Profession)}</td>
+        <td class="px-4 py-3 text-right font-semibold text-emerald-600">
+          PKR ${(parseFloat(d['Donation Amount'])||0).toLocaleString('en-PK')}
+        </td>
+        <td class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">${fmtDate(d.Date)}</td>
+      </tr>`).join('');
+  }
+
+  renderPagination('proj', rows.length, pages);
+}
+
+function onProjSearch() {
+  S.projFilter = $('projSearch').value;
+  S.projPage   = 1;
+  renderProject();
+}
+
+/* ─────────────────────────────────────────────────────
+   ADMIN – LOGIN / LOGOUT
+───────────────────────────────────────────────────── */
+function openAdminGate() {
+  if (S.adminAuth) { showPage('pageAdmin'); renderAdminTable(); return; }
+  $('loginPwd').value = '';
+  openModal('loginModal');
+  setTimeout(() => $('loginPwd').focus(), 120);
+}
+
+function doLogin() {
+  if ($('loginPwd').value === ADMIN_PW) {
+    S.adminAuth = true;
+    closeModal('loginModal');
+    $('fDate').value = today();
+    showPage('pageAdmin');
+    renderAdminTable();
+    toast('Welcome, Admin!');
+  } else {
+    toast('Wrong password', 'error');
+    $('loginPwd').value = '';
+    $('loginPwd').focus();
+  }
+}
+
+function doLogout() {
+  S.adminAuth = false;
+  resetForm();
+  navHome();
+  toast('Logged out', 'info');
+}
+
+/* ─────────────────────────────────────────────────────
+   ADMIN – TABLE RENDER
+───────────────────────────────────────────────────── */
+function renderAdminTable() {
+  const q   = S.adminFilter.toLowerCase();
+  const rows = S.data.filter(d =>
+    !q || [d.Name, d['Father Name'], d.Project, d.Profession]
+            .some(v => (v||'').toLowerCase().includes(q))
+  );
+
+  $('adminRecordCount').textContent = `(${rows.length})`;
+
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  if (S.adminPage > pages) S.adminPage = pages;
+  const start = (S.adminPage-1)*PER_PAGE;
+  const slice = rows.slice(start, start+PER_PAGE);
+
+  // Rebuild donor map for this render cycle (safe ref for edit/delete)
+  S._donorMap.clear();
+  slice.forEach((d, i) => S._donorMap.set(`dk_${i}`, d));
+
+  const tbody = $('adminTbody');
+  const empty = $('adminEmpty');
+
+  if (!slice.length) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+  } else {
+    empty.classList.add('hidden');
+    tbody.innerHTML = slice.map((d,i) => {
+      const c   = projCfg(d.Project);
+      const key = `dk_${i}`;
+      return `
+        <tr>
+          <td class="px-4 py-3 text-slate-400 text-xs">${start+i+1}</td>
+          <td class="px-4 py-3">
+            <span class="${c.badge} text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap">
+              ${esc(d.Project)}
+            </span>
+          </td>
+          <td class="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">${esc(d.Name)}</td>
+          <td class="px-4 py-3 text-slate-600 whitespace-nowrap">${esc(d['Father Name'])}</td>
+          <td class="px-4 py-3 text-slate-600">${esc(d.Age)}</td>
+          <td class="px-4 py-3 text-slate-600">${esc(d.Gender)}</td>
+          <td class="px-4 py-3 text-slate-600">${esc(d.Profession)}</td>
+          <td class="px-4 py-3 text-right font-semibold text-emerald-600 whitespace-nowrap">
+            PKR ${(parseFloat(d['Donation Amount'])||0).toLocaleString('en-PK')}
+          </td>
+          <td class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">${fmtDate(d.Date)}</td>
+          <td class="px-4 py-3">
+            <div class="flex gap-1.5 justify-center">
+              <button onclick="editDonor('${key}')"
+                      class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5
+                             rounded-lg text-xs font-semibold transition whitespace-nowrap">
+                ✏️ Edit
+              </button>
+              <button onclick="askDelete('${key}')"
+                      class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5
+                             rounded-lg text-xs font-semibold transition">
+                🗑️ Del
+              </button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  renderPagination('admin', rows.length, pages);
+}
+
+function onAdminSearch() {
+  S.adminFilter = $('adminSearch').value;
+  S.adminPage   = 1;
+  renderAdminTable();
+}
+
+/* ─────────────────────────────────────────────────────
+   ADMIN – ADD / EDIT FORM
+───────────────────────────────────────────────────── */
+async function submitForm(e) {
+  e.preventDefault();
+  const btn = $('fSubmitBtn');
+  btn.disabled    = true;
+  btn.textContent = S.editRow !== null ? 'Updating…' : 'Adding…';
+
+  const record = {
+    Project:           $('fProject').value,
+    Name:              $('fName').value.trim(),
+    'Father Name':     $('fFather').value.trim(),
+    Age:               $('fAge').value,
+    Gender:            $('fGender').value,
+    Profession:        $('fProfession').value.trim(),
+    'Donation Amount': parseFloat($('fAmount').value),
+    Date:              $('fDate').value,
+  };
+
+  const payload = S.editRow !== null
+    ? { action: 'update', row: S.editRow, ...record }
+    : { action: 'add',                    ...record };
+
+  const res = await postData(payload);
+
+  if (res.ok) {
+    toast(S.editRow !== null ? 'Donor updated!' : 'Donor added!');
+    resetForm();
+    await fetchData();
+  } else {
+    toast('Operation failed – please try again.', 'error');
+  }
+
+  btn.disabled    = false;
+  btn.textContent = S.editRow !== null ? 'Update Donor' : 'Add Donor';
+}
+
+function editDonor(key) {
+  const d = S._donorMap.get(key);
+  if (!d) return;
+  S.editRow = d.row;
+
+  $('fProject').value    = d.Project            || '';
+  $('fName').value       = d.Name               || '';
+  $('fFather').value     = d['Father Name']      || '';
+  $('fAge').value        = d.Age                || '';
+  $('fGender').value     = d.Gender             || '';
+  $('fProfession').value = d.Profession         || '';
+  $('fAmount').value     = d['Donation Amount'] || '';
+  $('fDate').value       = (d.Date||'').split('T')[0] || '';
+
+  $('formTitle').textContent  = 'Edit Donor';
+  $('fSubmitBtn').textContent = 'Update Donor';
+  $('fCancelBtn').classList.remove('hidden');
+
+  $('donorForm').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function resetForm() {
+  S.editRow = null;
+  $('donorForm').reset();
+  $('fDate').value            = today();
+  $('formTitle').textContent  = 'Add New Donor';
+  $('fSubmitBtn').textContent = 'Add Donor';
+  $('fCancelBtn').classList.add('hidden');
+}
+
+/* ─────────────────────────────────────────────────────
+   ADMIN – DELETE
+───────────────────────────────────────────────────── */
+function askDelete(key) {
+  const d = S._donorMap.get(key);
+  if (!d) return;
+  $('deleteModalMsg').textContent =
+    `Delete "${d.Name || 'this donor'}"? This cannot be undone.`;
+  $('deleteConfirmBtn').onclick = () => confirmDelete(d);
+  openModal('deleteModal');
+}
+
+async function confirmDelete(d) {
+  closeModal('deleteModal');
+  const res = await postData({ action: 'delete', row: d.row });
+  if (res.ok) {
+    toast(`"${d.Name}" deleted.`);
+    await fetchData();
+  } else {
+    toast('Delete failed – please try again.', 'error');
+  }
+}
+
+/* ─────────────────────────────────────────────────────
+   PAGINATION  (shared for both tables)
+───────────────────────────────────────────────────── */
+function renderPagination(prefix, total, pages) {
+  const infoEl = $(`${prefix}PagInfo`);
+  const btnsEl = $(`${prefix}PagBtns`);
+  const page   = prefix === 'proj' ? S.projPage : S.adminPage;
+
+  if (!total) { infoEl.textContent = 'No records'; btnsEl.innerHTML = ''; return; }
+
+  const s = (page-1)*PER_PAGE+1;
+  const e = Math.min(page*PER_PAGE, total);
+  infoEl.textContent = `Showing ${s}–${e} of ${total}`;
+
+  if (pages <= 1) { btnsEl.innerHTML = ''; return; }
+
+  const btnClass  = (active) => `px-3 py-1.5 rounded-lg text-xs font-semibold border transition
+    ${active
+      ? 'bg-blue-600 border-blue-600 text-white'
+      : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`;
+  const disClass  = `px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 text-slate-300 cursor-not-allowed`;
+
+  let html = '';
+  const fn  = prefix === 'proj' ? 'changeProjPage' : 'changeAdminPage';
+
+  html += `<button onclick="${fn}(${page-1})" ${page<=1?'disabled':''} class="${page<=1?disClass:btnClass(false)}">‹</button>`;
+
+  let lo = Math.max(1, page-2), hi = Math.min(pages, lo+4);
+  if (hi-lo<4) lo = Math.max(1, hi-4);
+  if (lo>1)  html += `<button onclick="${fn}(1)"  class="${btnClass(false)}">1</button>${lo>2?'<span class="px-1 text-slate-400 text-xs self-center">…</span>':''}`;
+  for (let i=lo;i<=hi;i++)
+    html += `<button onclick="${fn}(${i})" class="${btnClass(i===page)}">${i}</button>`;
+  if (hi<pages) html += `${hi<pages-1?'<span class="px-1 text-slate-400 text-xs self-center">…</span>':''}<button onclick="${fn}(${pages})" class="${btnClass(false)}">${pages}</button>`;
+  html += `<button onclick="${fn}(${page+1})" ${page>=pages?'disabled':''} class="${page>=pages?disClass:btnClass(false)}">›</button>`;
+
+  btnsEl.innerHTML = html;
+}
+
+function changeProjPage(p)  { S.projPage  = p; renderProject();   }
+function changeAdminPage(p) { S.adminPage = p; renderAdminTable(); }
+
+/* ─────────────────────────────────────────────────────
+   EXPORT TO CSV  (opens in Excel)
+───────────────────────────────────────────────────── */
+function exportCSV(mode) {
+  let rows, filename;
+
+  if (mode === 'project' && S.project) {
+    rows     = S.data.filter(d => d.Project === S.project);
+    filename = S.project.replace(/\s+/g,'_');
+  } else {
+    rows     = S.data;
+    filename = 'Doctorwala_All_Donors';
+  }
+
+  if (!rows.length) { toast('Nothing to export', 'warn'); return; }
+
+  const headers = ['#','Project','Name','Father Name','Age','Gender','Profession','Donation Amount (PKR)','Date'];
+  const dataRows = rows.map((d,i) => [
+    i+1,
+    d.Project            || '',
+    d.Name               || '',
+    d['Father Name']      || '',
+    d.Age                || '',
+    d.Gender             || '',
+    d.Profession         || '',
+    parseFloat(d['Donation Amount'])||0,
+    d.Date               || '',
+  ]);
+
+  const total = rows.reduce((s,d)=>s+(parseFloat(d['Donation Amount'])||0),0);
+  dataRows.push(['','','','','','','TOTAL →', total, '']);
+
+  const csv = [headers, ...dataRows]
+    .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
+    .join('\r\n');
+
+  // BOM for Excel UTF-8 compatibility
+  const blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `${filename}_${today()}.csv`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Export complete!');
+}
+
+/* ─────────────────────────────────────────────────────
+   KEYBOARD SHORTCUTS
+───────────────────────────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    // Close any open modal first
+    if (!$('loginModal').classList.contains('hidden'))  { closeModal('loginModal');  return; }
+    if (!$('deleteModal').classList.contains('hidden')) { closeModal('deleteModal'); return; }
+    if (S.view !== 'main') navHome();
+  }
+});
+
+/* ─────────────────────────────────────────────────────
+   INITIALISE
+───────────────────────────────────────────────────── */
+$('fDate').value = today();
+fetchData();
+</script>
+
+</body>
+</html>
